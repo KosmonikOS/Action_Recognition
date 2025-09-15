@@ -1,0 +1,11 @@
+**/__pycache__/
+.ipynb_checkpoints/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+*.env
+.DS_Store
+
+data/*
+models/*
+!models/configs/

@@ -74,22 +74,23 @@ As stated in [5], "DG-STGCN achieves significant improvements on multiple bench-
 ## 4. Datasets
 As we decided not to train skeleton detection model from scratch, we will only need to collect a dataset of videos with annotated actions. We plan to use datasets described in [5], [6] and [7]. As datasets contain different action sets and some of them contain non-sport related actions, we are going to use only the intersection of labels presented below:
 
-| label                  | PennAction | PennAction_name     | UCF101 | UCF101_name           | Kinetics400 | Kinetics400_name         |
+
+| label                  | PennAction | PennAction\_name    | UCF101 | UCF101\_name          | Kinetics400 | Kinetics400\_name        |
 |------------------------|------------|---------------------|--------|-----------------------|-------------|--------------------------|
-| bench_press            | True       | bench_press         | True   | Bench Press           | True        | bench pressing           |
+| bench\_press           | True       | bench\_press        | True   | Bench Press           | True        | bench pressing           |
 | squat                  | True       | squats              | True   | Body Weight Squats    | True        | squat                    |
-| clean_and_jerk         | True       | clean_and_jerk      | True   | Clean and Jerk        | False       |                          |
-| handstand_pushups      | False      |                     | True   | Handstand Pushups     | False       |                          |
-| handstand_walking      | False      |                     | True   | Handstand Walking     | False       |                          |
-| jumping_jacks          | True       | jumping_jacks       | True   | Jumping Jack          | False       |                          |
-| jump_rope              | True       | jump_rope           | True   | Jump Rope             | False       |                          |
+| clean\_and\_jerk      | True       | clean\_and\_jerk   | True   | Clean and Jerk        | False       |                          |
+| handstand\_pushups     | False      |                     | True   | Handstand Pushups     | False       |                          |
+| handstand\_walking     | False      |                     | True   | Handstand Walking     | False       |                          |
+| jumping\_jacks         | True       | jumping\_jacks      | True   | Jumping Jack          | False       |                          |
+| jump\_rope             | True       | jump\_rope          | True   | Jump Rope             | False       |                          |
 | lunges                 | False      |                     | True   | Lunges                | True        | lunge                    |
-| pull_ups               | True       | pull_ups            | True   | Pull Ups              | True        | pull ups                 |
-| push_ups               | True       | push_ups            | True   | Push Ups              | True        | push up                  |
-| running_on_treadmill   | False      |                     | False  |                       | True        | running on treadmill     |
-| sit_ups                | True       | sit_ups             | False  |                       | True        | situp                    |
-| snatch_weight_lifting  | False      |                     | False  |                       | True        | snatch weight lifting    |
-| wall_pushups           | False      |                     | True   | Wall Pushups          | False       |                          |
+| pull\_ups              | True       | pull\_ups           | True   | Pull Ups              | True        | pull ups                 |
+| push\_ups              | True       | push\_ups           | True   | Push Ups              | True        | push up                  |
+| running\_on\_treadmill | False      |                     | False  |                       | True        | running on treadmill     |
+| sit\_ups               | True       | sit\_ups            | False  |                       | True        | situp                    |
+| snatch\_weight\_lifting| False      |                     | False  |                       | True        | snatch weight lifting    |
+| wall\_pushups          | False      |                     | True   | Wall Pushups          | False       |                          |
 
 
 Videos that contains multiple people in the frame will be excluded from the resulting dataset.
@@ -121,6 +122,7 @@ For now the high-level plan looks like this:
 6. Wrap the resulting pipeline into a service (TBD):
 
 ## 6. Github Repository
+https://github.com/KosmonikOS/Action_Recognition
 
 ## 7. References
 1. [RTMPose: Real-Time Multi-Person Pose Estimation based on MMPose](https://arxiv.org/pdf/2303.07399)
