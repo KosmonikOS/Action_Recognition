@@ -18,12 +18,15 @@ class YoloPoseVideoLabeler:
         self.model = ultralytics.YOLO(model_path)
         self.params = params
 
-    def label_video(self, video_path: str) -> tuple[bool, np.ndarray | None]:
+    def label_video(
+        self, video_path: str, multi_person_tollerance_n_frames: int = 10
+    ) -> tuple[bool, np.ndarray | None]:
         """Label a video.
 
         Args
             video_path: Path to the video.
-
+            multi_person_tollerance_n_frames: The number of frames that can contain
+                more then one person. Used to tolerate incorrect model detection.
         Returns
             The tuple containing:
                 - Whether the video contains only one person.
@@ -40,11 +43,16 @@ class YoloPoseVideoLabeler:
             verbose=self.params.verbose,
         )
         frame_keypoints = []
+        multi_person_count = 0
         for frame_result in frame_results:
             # Frame contains more then one person
             # For the sake of this project, we skip such videos
             if frame_result.keypoints.shape[0] != 1:
-                return False, None
+                multi_person_count += 1
+                if multi_person_count >= multi_person_tollerance_n_frames:
+                    return False, None
+                continue
 
+            multi_person_count = 0
             frame_keypoints.append(frame_result.keypoints.data[0].cpu())
         return True, np.stack(frame_keypoints)
