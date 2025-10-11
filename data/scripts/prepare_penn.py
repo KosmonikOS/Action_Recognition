@@ -1,67 +1,126 @@
-import glob
-import os
+from __future__ import annotations
 
-import cv2
-import pandas as pd
+import argparse
+import logging
+from pathlib import Path
+
 from scipy.io import loadmat
 from tqdm import tqdm
 
+from data.scripts.dataset_utils import (
+    build_video_from_frames,
+    collect_frame_files,
+    load_normalization,
+    normalize_with_rules,
+    write_semicolon_csv,
+)
 
-dataset_root_path = ""
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 
-frames_dir = os.path.join(dataset_root_path, "frames")
-labels_dir = os.path.join(dataset_root_path, "labels")
-output_videos_dir = os.path.join(dataset_root_path, "videos_mp4")
-output_csv_path = os.path.join(dataset_root_path, "annotations.csv")
+def _iter_label_files(labels_dir: Path) -> list[Path]:
+    return sorted(labels_dir.glob("*.mat"))
 
-os.makedirs(output_videos_dir, exist_ok=True)
 
-print(f"[*] Original frames: {frames_dir}")
-print(f"[*] Original labels: {labels_dir}")
-print(f"[*] Folder for MP4 videos: {output_videos_dir}")
-print(f"[*] Output CSV file: {output_csv_path}")
+def _extract_action_from_mat(mat_path: Path) -> str | None:
+    mat = loadmat(str(mat_path))
+    action = mat.get("action")
+    if action is None:
+        return None
+    try:
+        while isinstance(action, list | tuple):
+            action = action[0]
+        if hasattr(action, "ravel"):
+            action = action.ravel()[0]
+        if isinstance(action, bytes):
+            return action.decode("utf-8", errors="ignore")
+        return str(action)
+    except Exception:
+        return None
 
-label_files = sorted(glob.glob(os.path.join(labels_dir, "*.mat")))
 
-csv_data = []
-DEFAULT_FPS = 30
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Prepare Penn dataset: build MP4 videos from frames, normalize labels, and write semicolon CSV.",
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        required=True,
+        help="Dataset root containing frames/ and labels/ directories.",
+    )
+    parser.add_argument("--fps", type=int, default=30, help="Frames per second for generated videos (default: 30).")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing MP4 files if present.")
+    parser.add_argument("--dry-run", action="store_true", help="Only print summary, do not write CSV or videos.")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Output CSV path (semicolon-separated). Default: <root>/labels_and_links.csv",
+    )
+    default_norm = Path(__file__).resolve().parent / "label_normalization.json"
+    parser.add_argument(
+        "--norm",
+        type=Path,
+        default=default_norm,
+        help="Path to label normalization JSON file.",
+    )
+    return parser.parse_args()
 
-print(f"\n[*] Starting processing {len(label_files)} videos...")
 
-for label_file_path in tqdm(label_files, desc="Building videos"):
-    base_name = os.path.splitext(os.path.basename(label_file_path))[0]
+def main() -> None:
+    args = parse_args()
+    root: Path = args.root.resolve()
+    if not root.exists() or not root.is_dir():
+        raise SystemExit(f"Root directory does not exist or is not a directory: {root}")
 
-    mat_data = loadmat(label_file_path)
-    action_label = mat_data["action"][0]
+    out_csv: Path = args.out if args.out is not None else (root / "labels_and_links.csv")
+    frames_root = root / "frames"
+    labels_root = root / "labels"
+    videos_root = root / "videos_mp4"
 
-    current_frames_dir = os.path.join(frames_dir, base_name)
-    frame_files = sorted(glob.glob(os.path.join(current_frames_dir, "*.jpg")))
+    target, synonyms = load_normalization(args.norm)
 
-    if not frame_files:
-        print(f"\n[!] Warning: for video {base_name} no frames found. Skipping.")
-        continue
+    label_files = list(_iter_label_files(labels_root))
+    rows: list[tuple[str, str]] = []
 
-    first_frame = cv2.imread(frame_files[0])
-    height, width, _ = first_frame.shape
+    for label_file in tqdm(label_files, desc="Processing Penn videos"):
+        base_name = label_file.stem
+        raw_label = _extract_action_from_mat(label_file)
+        if not raw_label:
+            continue
+        normalized = normalize_with_rules(raw_label, synonyms, target)
+        if normalized is None:
+            continue
 
-    output_video_path = os.path.join(output_videos_dir, f"{base_name}.mp4")
+        frames_dir = frames_root / base_name
+        frame_files = collect_frame_files(frames_dir)
+        if not frame_files:
+            continue
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    video_writer = cv2.VideoWriter(output_video_path, fourcc, DEFAULT_FPS, (width, height))
+        video_out = videos_root / f"{base_name}.mp4"
+        if not args.dry_run and (args.overwrite or not video_out.exists()):
+            _ = build_video_from_frames(frame_files, video_out, args.fps)
 
-    for frame_path in frame_files:
-        frame = cv2.imread(frame_path)
-        video_writer.write(frame)
+        if args.dry_run or video_out.exists():
+            rel = video_out.relative_to(out_csv.parent).as_posix()
+            rows.append((rel, normalized))
 
-    video_writer.release()
+    if args.dry_run:
+        total = len(rows)
+        by_label: dict[str, int] = {}
+        for _, label in rows:
+            by_label[label] = by_label.get(label, 0) + 1
+        logger.info("Found %d videos matching target labels under %s", total, root)
+        for label in sorted(by_label):
+            logger.info("  %s: %d", label, by_label[label])
+        return
 
-    csv_data.append({"video_path": output_video_path, "label": action_label})
+    write_semicolon_csv(out_csv, rows)
+    logger.info("Wrote %d rows to %s", len(rows), out_csv)
 
-print("\n[*] Creating and saving CSV file...")
-df = pd.DataFrame(csv_data)
-df.to_csv(output_csv_path, index=False, columns=["video_path", "label"])
 
-print(f"\nDone! Results saved:")
-print(f"    - Videos: {output_videos_dir}")
-print(f"    - CSV file: {output_csv_path}")
+if __name__ == "__main__":
+    main()
