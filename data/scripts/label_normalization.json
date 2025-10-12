@@ -1,0 +1,89 @@
+{
+  "target_labels": [
+    "bench_press",
+    "squat",
+    "clean_and_jerk",
+    "lunges",
+    "pullup",
+    "pushup",
+    "running_on_treadmill",
+    "situp",
+    "snatch_weight_lifting",
+    "jumping_jacks",
+    "jump_rope",
+    "handstand_walking",
+    "wall_pushups",
+    "handstand_pushups"
+  ],
+  "synonyms": {
+    "bench_press": "bench_press",
+    "benchpress": "bench_press",
+    "bench_presses": "bench_press",
+    "bench_pressing": "bench_press",
+    "bench_pressings": "bench_press",
+
+    "squat": "squat",
+    "squats": "squat",
+    "squatting": "squat",
+    "body_weight_squats": "squat",
+    "bodyweight_squats": "squat",
+    "body_weight_squat": "squat",
+    "bodyweight_squat": "squat",
+
+    "lunge": "lunges",
+    "lunges": "lunges",
+
+    "pull_up": "pullup",
+    "pull_ups": "pullup",
+    "pullup": "pullup",
+    "pullups": "pullup",
+    "pull_up_exercise": "pullup",
+
+    "push_up": "pushup",
+    "push_ups": "pushup",
+    "pushup": "pushup",
+    "pushups": "pushup",
+
+    "wall_pushups": "wall_pushups",
+    "wall_push_ups": "wall_pushups",
+    "wall_pushup": "wall_pushups",
+
+    "handstand_pushups": "handstand_pushups",
+    "handstand_push_ups": "handstand_pushups",
+    "handstand_pushup": "handstand_pushups",
+
+    "running_on_treadmill": "running_on_treadmill",
+    "treadmill_running": "running_on_treadmill",
+    "run_on_treadmill": "running_on_treadmill",
+    "running_treadmill": "running_on_treadmill",
+
+    "situp": "situp",
+    "situps": "situp",
+    "sit_up": "situp",
+    "sit_ups": "situp",
+
+    "snatch_weightlifting": "snatch_weight_lifting",
+    "snatch_weight_lifting": "snatch_weight_lifting",
+    "weightlifting_snatch": "snatch_weight_lifting",
+    "weight_lifting_snatch": "snatch_weight_lifting",
+    "snatch": "snatch_weight_lifting",
+
+    "clean_and_jerk": "clean_and_jerk",
+
+    "jumping_jack": "jumping_jacks",
+    "jumping_jacks": "jumping_jacks",
+    "jump_jack": "jumping_jacks",
+    "jump_jacks": "jumping_jacks",
+    "jumpingjack": "jumping_jacks",
+
+    "jump_rope": "jump_rope",
+    "jumping_rope": "jump_rope",
+    "jumprope": "jump_rope",
+    "skipping_rope": "jump_rope",
+
+    "handstand_walking": "handstand_walking",
+    "handstand_walk": "handstand_walking",
+    "handstand_walks": "handstand_walking"
+  }
+}
+
