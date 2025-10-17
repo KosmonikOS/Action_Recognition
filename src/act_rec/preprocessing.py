@@ -9,11 +9,11 @@ import torch.nn.functional as F
 
 
 def valid_crop_resize(
-    data_numpy: np.ndarray,
+    data_numpy: np.ndarray | torch.Tensor,
     valid_frame_num: int,
     p_interval: Sequence[float],
     window: int,
-) -> np.ndarray:
+) -> torch.Tensor:
     """
     Crop a valid temporal window and resize it to ``window`` frames.
 
@@ -24,17 +24,18 @@ def valid_crop_resize(
     of persons. The result has the same layout with the temporal dimension
     resampled to ``window``.
     """
-    if data_numpy.ndim != 4:
-        raise ValueError(f"Expected data with 4 dimensions (C, T, V, M); got shape {data_numpy.shape}")
+    data_tensor = torch.as_tensor(data_numpy, dtype=torch.float32)
+    if data_tensor.dim() != 4:
+        raise ValueError(f"Expected data with 4 dimensions (C, T, V, M); got shape {tuple(data_tensor.shape)}")
 
-    C, T, V, M = data_numpy.shape
+    C, T, V, M = data_tensor.shape
     begin = 0
     end = valid_frame_num if valid_frame_num > 0 else T
     valid_size = end - begin
     if valid_size <= 0:
         raise ValueError("valid_frame_num must be positive or detectable from data.")
 
-    p_vals = tuple(p_interval) if isinstance(p_interval, Sequence) else (float(p_interval),)
+    p_vals = tuple(p_interval) if isinstance(p_interval, Sequence) else (float(p_interval[0]),)
     if len(p_vals) == 0:
         raise ValueError("p_interval must contain at least one value.")
 
@@ -43,7 +44,7 @@ def valid_crop_resize(
         bias = int((1 - p) * valid_size / 2)
         start = max(begin + bias, 0)
         stop = min(end - bias, T)
-        data = data_numpy[:, start:stop, :, :]
+        data = data_tensor[:, start:stop, :, :]
     else:
         low, high = float(p_vals[0]), float(p_vals[1])
         if low > high:
@@ -54,60 +55,28 @@ def valid_crop_resize(
         bias = np.random.randint(0, valid_size - cropped_length + 1)
         start = begin + bias
         stop = start + cropped_length
-        data = data_numpy[:, start:stop, :, :]
+        data = data_tensor[:, start:stop, :, :]
 
-    if data.shape[1] == 0:
+    if data.size(1) == 0:
         raise ValueError("Cropping resulted in an empty sequence. Check p_interval or input data.")
 
-    cropped_length = data.shape[1]
-    data_tensor = torch.from_numpy(data).float()
-    data_tensor = data_tensor.permute(0, 2, 3, 1).contiguous().view(C * V * M, cropped_length)
-    data_tensor = data_tensor.unsqueeze(0).unsqueeze(0)
-    data_tensor = F.interpolate(
-        data_tensor,
+    cropped_length = data.size(1)
+    data = data.permute(0, 2, 3, 1).contiguous().view(C * V * M, cropped_length)
+    data = data.unsqueeze(0).unsqueeze(0)
+    data = F.interpolate(
+        data,
         size=(C * V * M, window),
         mode="bilinear",
         align_corners=False,
-    ).squeeze()
-    data_tensor = data_tensor.contiguous().view(C, V, M, window).permute(0, 3, 1, 2).contiguous()
-    return data_tensor.numpy()
+    )
+    data = data[0, 0]
+    data = data.contiguous().view(C, V, M, window).permute(0, 3, 1, 2).contiguous()
+    return data
 
 
-def _rot(rot: torch.Tensor) -> torch.Tensor:
+def random_rot(data_numpy: np.ndarray | torch.Tensor, theta: float = 0.3) -> torch.Tensor:
     """
-    Build 3D rotation matrices for each frame.
-
-    Parameters
-    ----------
-    rot: torch.Tensor
-        Tensor of shape ``(T, 3)`` containing rotation angles (rx, ry, rz) per frame.
-    """
-    cos_r, sin_r = rot.cos(), rot.sin()
-    zeros = torch.zeros(rot.shape[0], 1, device=rot.device)
-    ones = torch.ones(rot.shape[0], 1, device=rot.device)
-
-    r1 = torch.stack((ones, zeros, zeros), dim=-1)
-    rx2 = torch.stack((zeros, cos_r[:, 0:1], sin_r[:, 0:1]), dim=-1)
-    rx3 = torch.stack((zeros, -sin_r[:, 0:1], cos_r[:, 0:1]), dim=-1)
-    rx = torch.cat((r1, rx2, rx3), dim=1)
-
-    ry1 = torch.stack((cos_r[:, 1:2], zeros, -sin_r[:, 1:2]), dim=-1)
-    r2 = torch.stack((zeros, ones, zeros), dim=-1)
-    ry3 = torch.stack((sin_r[:, 1:2], zeros, cos_r[:, 1:2]), dim=-1)
-    ry = torch.cat((ry1, r2, ry3), dim=1)
-
-    rz1 = torch.stack((cos_r[:, 2:3], sin_r[:, 2:3], zeros), dim=-1)
-    r3 = torch.stack((zeros, zeros, ones), dim=-1)
-    rz2 = torch.stack((-sin_r[:, 2:3], cos_r[:, 2:3], zeros), dim=-1)
-    rz = torch.cat((rz1, rz2, r3), dim=1)
-
-    rot = rz.matmul(ry).matmul(rx)
-    return rot
-
-
-def random_rot(data_numpy: np.ndarray, theta: float = 0.3) -> np.ndarray:
-    """
-    Apply a random 3D rotation to the sequence, following InfoGCN++ augments.
+    Apply a random in-plane rotation to the sequence (XY joints only).
 
     Parameters
     ----------
@@ -116,130 +85,76 @@ def random_rot(data_numpy: np.ndarray, theta: float = 0.3) -> np.ndarray:
     theta: float
         Maximum absolute rotation angle (radians) sampled per axis.
     """
-    data_torch = torch.from_numpy(data_numpy).float()
-    C, T, V, M = data_torch.shape
-    data_torch = data_torch.permute(1, 0, 2, 3).contiguous().view(T, C, V * M)
-    rot = torch.zeros(3).uniform_(-theta, theta)
-    rot = rot.repeat(T, 1)
-    rot_mats = _rot(rot)
-    data_torch = torch.matmul(rot_mats, data_torch)
-    data_torch = data_torch.view(T, C, V, M).permute(1, 0, 2, 3).contiguous()
-    return data_torch.numpy()
+    data_torch = torch.as_tensor(data_numpy, dtype=torch.float32).clone()
+    if data_torch.size(0) < 2:
+        return data_torch
+
+    angle = float(torch.empty(1).uniform_(-theta, theta))
+    cos_theta, sin_theta = math.cos(angle), math.sin(angle)
+
+    rot = torch.tensor(
+        [[cos_theta, -sin_theta], [sin_theta, cos_theta]],
+        dtype=data_torch.dtype,
+    )
+
+    coords = data_torch[:2].reshape(2, -1)
+    coords = rot @ coords
+    data_torch[:2] = coords.view_as(data_torch[:2])
+    return data_torch
 
 
 def preprocess_sequence(
-    sequence: np.ndarray,
+    sequence: np.ndarray | torch.Tensor,
     *,
     window_size: int = 64,
     p_interval: Sequence[float] = (1.0,),
     random_rotation: bool = False,
     use_velocity: bool = False,
-    clip_index: int | None = None,
     valid_frame_num: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Preprocess a single skeleton sequence stored as ``(T, V, C)`` numpy array.
 
-    The sequence is split into contiguous, non-overlapping clips of length
-    ``window_size`` frames (with the final clip containing the remainder). Each
-    clip is independently interpolated to exactly ``window_size`` frames and
-    augmented according to the provided options.
-
-    Parameters
-    ----------
-    sequence: np.ndarray
-        Raw skeleton with ``T`` frames, ``V`` joints and ``C`` channels (e.g. x, y, score).
-    window_size: int
-        Target number of frames after temporal interpolation/cropping.
-    p_interval: Sequence[float]
-        Temporal sampling interval used for sub-clip cropping (same semantics as InfoGCN++).
-    random_rotation: bool
-        Whether to apply random 3D rotation augmentation.
-    use_velocity: bool
-        If ``True``, convert coordinates to frame-to-frame motion (velocity) and zero the last frame.
-
-    clip_index: int | None
-        If provided, return only the ``clip_index``-th clip instead of stacking all.
-    valid_frame_num: int | None
-        Optional number of valid frames. When provided, the function skips recomputing
-        temporal validity and trims the sequence to ``valid_frame_num`` frames.
-
-    Returns
-    -------
-    data_tensor: torch.Tensor
-        Float tensor with shape ``(num_clips, C, window_size, V, 1)`` when ``clip_index`` is ``None``.
-        If ``clip_index`` is specified the shape is ``(C, window_size, V, 1)``.
-    mask_tensor: torch.Tensor
-        Boolean tensor with shape ``(num_clips, 1, window_size, 1, 1)`` when ``clip_index`` is ``None``.
-        If ``clip_index`` is specified the shape is ``(1, window_size, 1, 1)``.
+    The routine mirrors the InfoGCN++ feeder: a temporal crop is chosen according
+    to ``p_interval``, resized to ``window_size`` frames, then optional spatial
+    augmentations (random rotation) and temporal differencing (velocity) are
+    applied. The output tensor has shape ``(C, window_size, V, 1)`` – matching the
+    expected input layout of the SODE backbone.
     """
-    if sequence.ndim != 3:
-        raise ValueError(f"Expected sequence with shape (T, V, C); got {sequence.shape}")
+    sequence_tensor = torch.as_tensor(sequence, dtype=torch.float32)
+    if sequence_tensor.dim() != 3:
+        raise ValueError(f"Expected sequence with shape (T, V, C); got {tuple(sequence_tensor.shape)}")
 
-    sequence = sequence.astype(np.float32, copy=False)
-    T, V, C = sequence.shape
+    T, V, C = sequence_tensor.shape
     if T == 0:
         raise ValueError("Sequence must contain at least one frame.")
 
-    data = np.transpose(sequence, (2, 0, 1))  # (C, T, V)
-    data = data[..., np.newaxis]  # (C, T, V, 1)
+    data = sequence_tensor.permute(2, 0, 1).unsqueeze(-1)  # (C, T, V, 1)
 
     if valid_frame_num is not None:
         valid_frame_num = int(valid_frame_num)
         if valid_frame_num <= 0:
             raise ValueError("valid_frame_num must be positive.")
-        valid_frame_num = min(valid_frame_num, data.shape[1])
-        data = data[:, :valid_frame_num, :, :]
+        valid_frame_num = min(valid_frame_num, data.size(1))
     else:
-        frame_activity = np.abs(data).sum(axis=(0, 2, 3)) > 0  # (T,)
+        frame_activity = data.abs().sum(dim=(0, 2, 3)) > 0  # (T,)
         if frame_activity.any():
-            last_valid = int(np.where(frame_activity)[0][-1]) + 1
-            data = data[:, :last_valid, :, :]
+            valid_indices = torch.nonzero(frame_activity, as_tuple=False)
+            valid_frame_num = int(valid_indices[-1].item() + 1)
         else:
-            data = data[:, :T, :, :]
-        valid_frame_num = data.shape[1]
+            valid_frame_num = T
+        valid_frame_num = max(valid_frame_num, 1)
 
-    if valid_frame_num == 0:
-        raise ValueError("Sequence must contain at least one frame.")
+    data = data[:, :valid_frame_num, :, :]
 
-    num_clips = max(1, math.ceil(valid_frame_num / window_size))
+    clip = valid_crop_resize(data, valid_frame_num, p_interval, window_size)
+    mask = clip.abs().sum(dim=0, keepdim=True).sum(dim=2, keepdim=True) > 0
+    if random_rotation:
+        clip = random_rot(clip)
+    if use_velocity:
+        clip[:, :-1] = clip[:, 1:] - clip[:, :-1]
+        clip[:, -1] = 0.0
 
-    def _process_clip(start_idx: int, end_idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        clip = data[:, start_idx:end_idx, :, :]
-        clip_valid_frames = clip.shape[1]
-        if clip_valid_frames == 0:
-            raise ValueError("Encountered an empty clip during preprocessing.")
-        clip = valid_crop_resize(clip, clip_valid_frames, p_interval, window_size)
-        if random_rotation:
-            clip = random_rot(clip)
-        if use_velocity:
-            clip[:, :-1] = clip[:, 1:] - clip[:, :-1]
-            clip[:, -1] = 0.0
-        mask = np.abs(clip).sum(axis=0, keepdims=True).sum(axis=2, keepdims=True) > 0
-        clip_tensor = torch.from_numpy(clip).float()
-        mask_tensor = torch.from_numpy(mask).bool()
-        return clip_tensor, mask_tensor
-
-    if clip_index is not None:
-        if clip_index < 0 or clip_index >= num_clips:
-            raise IndexError(f"clip_index {clip_index} out of range for {num_clips} clips.")
-        start_idx = clip_index * window_size
-        if clip_index == num_clips - 1:
-            end_idx = valid_frame_num
-        else:
-            end_idx = min(start_idx + window_size, valid_frame_num)
-        return _process_clip(start_idx, end_idx)
-
-    clips: list[torch.Tensor] = []
-    masks: list[torch.Tensor] = []
-    start_idx = 0
-    while start_idx < valid_frame_num:
-        end_idx = min(start_idx + window_size, valid_frame_num)
-        clip_tensor, mask_tensor = _process_clip(start_idx, end_idx)
-        clips.append(clip_tensor)
-        masks.append(mask_tensor)
-        start_idx += window_size
-
-    data_tensor = torch.stack(clips, dim=0)
-    mask_tensor = torch.stack(masks, dim=0)
+    data_tensor = clip.float()
+    mask_tensor = mask.to(torch.bool)
     return data_tensor, mask_tensor

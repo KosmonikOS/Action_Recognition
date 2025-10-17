@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -13,11 +12,12 @@ from act_rec.preprocessing import preprocess_sequence
 
 class SkeletonNpyDataset(Dataset):
     """
-    Minimal dataset wrapper for ``.npy`` skeleton clips.
+    Dataset wrapper for ``.npy`` skeleton sequences following the InfoGCN++
+    preprocessing pipeline.
 
-    Each raw file yields one or more windowed clips. When ``preload`` is enabled
-    every clip is fully preprocessed during initialisation and served directly
-    from memory.
+    Each entry corresponds to a single source sequence. Temporal crops are drawn
+    on-the-fly using the provided ``p_interval`` so repeated epochs expose the
+    model to different sub-clips, just like the original feeder implementation.
     """
 
     def __init__(
@@ -27,9 +27,11 @@ class SkeletonNpyDataset(Dataset):
         *,
         window_size: int = 64,
         p_interval: Sequence[float] = (1.0,),
-        random_rotation: bool = False,
-        use_velocity: bool = False,
-        preload: bool = False,
+        random_rotation: bool = True,
+        use_velocity: bool = True,
+        preload: bool = True,
+        preload_to_tensor: bool = True,
+        repeat: int = 1,
     ) -> None:
         self.files = [Path(f) for f in files]
         if labels is not None and len(labels) != len(self.files):
@@ -40,21 +42,23 @@ class SkeletonNpyDataset(Dataset):
         self.random_rotation = random_rotation
         self.use_velocity = use_velocity
         self.preload = preload
+        self.preload_to_tensor = preload_to_tensor
+        self.repeat = max(int(repeat), 1)
 
-        self._clip_index: list[tuple[int, int]] = []
+        if self.preload_to_tensor and not self.preload:
+            raise ValueError("preload_to_tensor=True requires preload=True.")
+
         self._file_meta: list[dict[str, int]] = []
-        self._preloaded_clips: list[tuple[torch.Tensor, torch.Tensor]] | None = None
+        self._preloaded_sequences: list[np.ndarray | torch.Tensor] | None = None
 
-        self._build_index()
-        if self.preload:
-            self._preload_all_clips()
+        self._index_metadata()
 
     def __len__(self) -> int:
-        return len(self._clip_index)
+        return len(self.files) * self.repeat
 
-    def _build_index(self) -> None:
-        self._clip_index.clear()
+    def _index_metadata(self) -> None:
         self._file_meta.clear()
+        preloaded: list[np.ndarray | torch.Tensor] | None = [] if self.preload else None
 
         for file_idx, path in enumerate(self.files):
             seq = np.load(path)
@@ -74,66 +78,42 @@ class SkeletonNpyDataset(Dataset):
                 last_valid = num_frames
             valid_len = max(last_valid, 1)
 
-            num_clips = max(1, math.ceil(valid_len / self.window_size))
-            self._file_meta.append({"valid_len": valid_len, "num_clips": num_clips})
+            self._file_meta.append({"valid_len": valid_len})
 
-            for clip_idx in range(num_clips):
-                self._clip_index.append((file_idx, clip_idx))
+            if preloaded is not None:
+                seq_valid = seq[:valid_len].astype(np.float32, copy=False)
+                if self.preload_to_tensor:
+                    preloaded.append(torch.tensor(seq_valid, dtype=torch.float32))
+                else:
+                    preloaded.append(np.array(seq_valid, copy=True))
 
-    def _load_sequence(self, file_idx: int) -> np.ndarray:
-        seq = np.load(self.files[file_idx]).astype(np.float32, copy=False)
+        if self.preload:
+            self._preloaded_sequences = preloaded
+        else:
+            self._preloaded_sequences = None
+
+    def _load_sequence(self, file_idx: int) -> tuple[np.ndarray | torch.Tensor, int]:
+        if self._preloaded_sequences is not None:
+            sequence = self._preloaded_sequences[file_idx]
+        else:
+            sequence = np.load(self.files[file_idx]).astype(np.float32, copy=False)
+            valid_len = self._file_meta[file_idx]["valid_len"]
+            sequence = sequence[:valid_len]
         valid_len = self._file_meta[file_idx]["valid_len"]
-        if valid_len < seq.shape[0]:
-            return seq[:valid_len]
-        return seq
-
-    def _preload_all_clips(self) -> None:
-        self._preloaded_clips = [None] * len(self._clip_index)
-        offset = 0
-        for file_idx, path in enumerate(self.files):
-            meta = self._file_meta[file_idx]
-            num_clips = meta["num_clips"]
-            if num_clips == 0:
-                continue
-
-            sequence = np.load(path).astype(np.float32, copy=False)
-            valid_len = meta["valid_len"]
-            if valid_len < sequence.shape[0]:
-                sequence = sequence[:valid_len]
-
-            for local_clip_idx in range(num_clips):
-                data_tensor, mask_tensor = preprocess_sequence(
-                    sequence,
-                    window_size=self.window_size,
-                    p_interval=self.p_interval,
-                    random_rotation=self.random_rotation,
-                    use_velocity=self.use_velocity,
-                    clip_index=local_clip_idx,
-                    valid_frame_num=valid_len,
-                )
-                self._preloaded_clips[offset + local_clip_idx] = (
-                    data_tensor.contiguous(),
-                    mask_tensor.contiguous(),
-                )
-            offset += num_clips
+        return sequence, valid_len
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, int | None, torch.Tensor, int]:
-        if self.preload and self._preloaded_clips is not None:
-            data_tensor, mask_tensor = self._preloaded_clips[idx]
-            file_idx, _ = self._clip_index[idx]
-        else:
-            file_idx, clip_idx = self._clip_index[idx]
-            sequence = self._load_sequence(file_idx)
-            meta = self._file_meta[file_idx]
-            data_tensor, mask_tensor = preprocess_sequence(
-                sequence,
-                window_size=self.window_size,
-                p_interval=self.p_interval,
-                random_rotation=self.random_rotation,
-                use_velocity=self.use_velocity,
-                clip_index=clip_idx,
-                valid_frame_num=meta["valid_len"],
-            )
+        file_idx = idx % len(self.files)
+        sequence, valid_len = self._load_sequence(file_idx)
+
+        data_tensor, mask_tensor = preprocess_sequence(
+            sequence,
+            window_size=self.window_size,
+            p_interval=self.p_interval,
+            random_rotation=self.random_rotation,
+            use_velocity=self.use_velocity,
+            valid_frame_num=valid_len,
+        )
 
         label = self.labels[file_idx] if self.labels is not None else None
-        return data_tensor, label, mask_tensor, idx
+        return data_tensor.contiguous(), label, mask_tensor.contiguous(), file_idx

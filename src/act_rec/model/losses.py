@@ -18,8 +18,12 @@ def masked_recon_loss(x_hat: torch.Tensor, x: torch.Tensor, mask: torch.Tensor) 
     mask: torch.Tensor
         Mask broadcastable to the same shape as `x_hat`.
     """
-    recon = (F.mse_loss(x_hat, x, reduction="none") * mask)
-    return recon.sum() / mask.sum().clamp_min(1.0)
+    mask = mask.to(x_hat.dtype)
+    recon = F.mse_loss(x_hat, x, reduction="none") * mask
+    mask_sum = mask.sum()
+    if mask_sum.item() == 0:
+        raise ValueError("Reconstruction mask is empty; cannot compute masked loss.")
+    return recon.sum() / mask_sum
 
 
 class LabelSmoothingCrossEntropy(nn.Module):
@@ -34,4 +38,3 @@ class LabelSmoothingCrossEntropy(nn.Module):
         smooth_loss = -logprobs.mean(dim=-1)
         loss = confidence * nll_loss + self.smoothing * smooth_loss
         return loss.mean()
-
