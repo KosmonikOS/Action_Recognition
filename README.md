@@ -60,4 +60,6 @@ The following sport activities are included in our unified dataset:
 ```bash
 pip install -e .
 ```
-2. Other steps will be added later.
+2. Run the data pipeline described in [prepare_data.md](./docs/prepare_data.md).
+
+3. Run the training pipeline described in [train_pipeline.md](./docs/train_pipeline.md).
