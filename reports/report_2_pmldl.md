@@ -2,7 +2,7 @@
 Members:
 - Nikita Tiurkov (n.tiurkov@innopolis.university)
 - Viktor Mazanov (v.mazanov@innopolis.university)
-- Oleg Shchendrigin (o.shchendrigin@innopolis.university)
+- Oleg Shchendrigin (o.shchendrigin@iMarkdown Preview Enhancennopolis.university)
 
 ## 2. Github Repository
 https://github.com/KosmonikOS/Action_Recognition
