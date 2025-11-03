@@ -1,8 +1,7 @@
-## 0. Team Information (JustTeam)
+## 0. Team Information
 Members:
 - Nikita Tiurkov (n.tiurkov@innopolis.university)
-- Viktor Mazanov (v.mazanov@innopolis.university)
-- Oleg Shchendrigin (o.shchendrigin@innopolis.university)
+- Alexandra Starikova-Nasibullina (a.nasibullina@innopolis.university)
 
 ## 1. Project Information (Human Action Recognition in a Real-Time Video Stream)
 ### 1.1. Description
