@@ -53,9 +53,7 @@ The following sport activities are included in our unified dataset:
 | snatch_weight_lifting  | ✗          | ✗      | ✓           | 37    |
 | running_on_treadmill   | ✗          | ✗      | ✓           | 11    |
 
-## Quick Start
-
-### Installation
+## Reproduction
 1. Install all dependencies and the main package:
 ```bash
 pip install -e .
@@ -63,3 +61,23 @@ pip install -e .
 2. Run the data pipeline described in [prepare_data.md](./docs/prepare_data.md).
 
 3. Run the training pipeline described in [train_pipeline.md](./docs/train_pipeline.md).
+
+## Usage
+### Run the streaming inference API
+Launch the FastAPI service that wraps the YOLO + SODE inference stack:
+
+```bash
+python -m act_rec.api.app --host 0.0.0.0 --port 8000
+```
+
+### Run the Streamlit client
+With the API running, start the demo UI:
+
+```bash
+streamlit run src/act_rec/app/app.py
+```
+
+By default, the client looks for the API at `http://localhost:8000`. Point it elsewhere by exporting `ACT_REC_API_URL=http://your-host:8000` before launching, or by editing the base URL field in the app sidebar.
+
+### Why we do not ship Dockerfiles
+This project targets consumer-grade GPUs (Apple Silicon, desktop NVIDIA cards, etc.). Docker on macOS does not expose the host GPU, and the Linux GPU support matrix varies between vendors. To keep the pipeline runnable on any machine with an accessible GPU, we encourage running the code directly in the host environment instead of relying on Docker images.
