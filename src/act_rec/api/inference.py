@@ -29,7 +29,7 @@ def _resolve_checkpoint_path() -> Path:
     env_path = os.getenv("SODE_CHECKPOINT_PATH")
     if env_path:
         return Path(env_path).expanduser().resolve()
-    return (_project_root() / "experiments" / "sode_best.pt").resolve()
+    return (_project_root() / "models" / "sode.pt").resolve()
 
 
 def _resolve_yolo_weights_path() -> Path:
