@@ -22,7 +22,7 @@ This project develops a complete pipeline for detecting and classifying human ac
 ## Models Used
 
 1. Pretrained [YOLOv11](https://arxiv.org/pdf/2410.17725v1) for pose estimation
-2. Finetuned [InfoGCN++](https://arxiv.org/pdf/2310.10547) for action recognition
+2. Trained from scratch [InfoGCN++](https://arxiv.org/pdf/2310.10547) for action recognition
 
 ## Data Used
 
