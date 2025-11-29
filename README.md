@@ -62,6 +62,8 @@ pip install -e .
 
 3. Run the training pipeline described in [train_pipeline.md](./docs/train_pipeline.md).
 
+4. If you want to reproduce training only (from already prepared data) follow instructions in [Colab](https://colab.research.google.com/drive/12tHvOzTkLO6xxDU6R2pzm0fFrPMlWqgj?usp=sharing).
+
 ## Usage
 ### Run the streaming inference API
 Launch the FastAPI service that wraps the YOLO + SODE inference stack:
